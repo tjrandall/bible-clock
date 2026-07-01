@@ -32,6 +32,12 @@ def get_display_mode(hour: int, day_start: int, night_start: int, sleep_start: i
     return "day"
 
 display_mode = get_display_mode(now.hour, schedule["day_start"], schedule["night_start"], schedule["sleep_start"], schedule["sleep_end"])
+clock_face_str = now.strftime("%H:%M") if schedule["clock_format"] == 24 else now.strftime("%I:%M")
+
+# Display Distance: scales Tier 2/3 (secondary/detail) text for how far away the tablet
+# sits from the reader. Tier 1 (clock, verse) never scales with this - see BIBLE_CLOCK_READABILITY_SPEC.md
+DISTANCE_MULTIPLIERS = {"Desk": 1.0, "Counter": 1.25, "Wall": 1.5}
+distance_multiplier = DISTANCE_MULTIPLIERS.get(schedule["display_distance"], 1.0)
 
 THEMES = {
     "day":   {"bg": "#FFFFFF", "clock": "#1B263B", "title": "#415A77", "body_text": "#2C3E50", "hero": "#0D1B2A", "citation": "#415A77",
@@ -43,16 +49,26 @@ THEMES = {
 }
 theme = THEMES[display_mode]
 
+# --- TAP-TO-DETAIL: pure CSS, no JS/server round-trip - see BIBLE_CLOCK_READABILITY_SPEC.md ---
+# A hidden checkbox + label wraps a card's content. Checking it (tapping) plays a CSS
+# keyframe animation that scales the content up via transform (doesn't affect layout/
+# reflow of anything else) and settles back to normal size on its own after ~5s.
+# Tapping again mid-animation unchecks the box, which cancels the animation immediately.
+def wrap_tap_zoom(zoom_id, content_html):
+    return f'''<input type="checkbox" id="{zoom_id}" class="tap-zoom-box">
+    <label for="{zoom_id}" class="tap-zoom-label">{content_html}</label>'''
+
 # --- STATION INSTRUMENT PANEL: gauge rendering (translates STATION_INSTRUMENT_PANEL_SPEC.md) ---
 GAUGE_TICK_ANGLES = [-165, -110, -55, 0, 55, 110, 165]
 
-def render_gauge(min_val, max_val, value, dial_label, value_text, status_text, theme, format_value, size=132):
+def render_gauge(min_val, max_val, value, dial_label, value_text, status_text, theme, format_value, distance_multiplier=1.0, size=132):
     try:
         fraction = max(0.0, min(1.0, (float(value) - min_val) / (max_val - min_val)))
     except (TypeError, ValueError, ZeroDivisionError):
         fraction = 0.5
     needle_deg = -165 + fraction * 330
     tick_values = [min_val + i * (max_val - min_val) / 6 for i in range(7)]
+    tick_fs, dial_fs, value_fs, status_fs = 9 * distance_multiplier, 8 * distance_multiplier, 30 * distance_multiplier, 12 * distance_multiplier
 
     ticks_svg, labels_svg = "", ""
     for i, angle in enumerate(GAUGE_TICK_ANGLES):
@@ -61,74 +77,76 @@ def render_gauge(min_val, max_val, value, dial_label, value_text, status_text, t
         lx, ly = 80 + 50 * math.sin(rad), 80 - 50 * math.cos(rad)
         color = theme["body_text"] if angle == 0 else theme["text_secondary"]
         weight = "font-weight:700;" if angle == 0 else ""
-        labels_svg += f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="9" text-anchor="middle" dominant-baseline="middle" fill="{color}" style="{weight}">{format_value(tick_values[i])}</text>'
+        labels_svg += f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="{tick_fs:.1f}" text-anchor="middle" dominant-baseline="middle" fill="{color}" style="{weight}">{format_value(tick_values[i])}</text>'
 
     svg = f'''<svg width="{size}" height="{size}" viewBox="0 0 160 160">
       <circle cx="80" cy="80" r="66" fill="none" stroke="{theme["border"]}" stroke-width="1"/>
       <circle cx="80" cy="80" r="58" fill="none" stroke="{theme["border"]}" stroke-width="8"/>
       {ticks_svg}{labels_svg}
-      <text x="80" y="104" font-size="8" font-style="italic" text-anchor="middle" fill="{theme["text_muted"]}">{dial_label}</text>
+      <text x="80" y="104" font-size="{dial_fs:.1f}" font-style="italic" text-anchor="middle" fill="{theme["text_muted"]}">{dial_label}</text>
       <line x1="80" y1="80" x2="80" y2="26" stroke="{theme["body_text"]}" stroke-width="2" transform="rotate({needle_deg:.1f} 80 80)"/>
       <circle cx="80" cy="80" r="4" fill="{theme["body_text"]}"/>
     </svg>'''
 
     return f'''<div style="text-align:center;">{svg}
-      <div style="font-size:15px;font-weight:500;color:{theme["body_text"]};margin-top:2px;">{value_text}</div>
-      <div style="font-size:12px;color:{theme["text_muted"]};">{status_text}</div>
+      <div style="font-size:{value_fs:.1f}px;font-weight:500;color:{theme["body_text"]};margin-top:2px;">{value_text}</div>
+      <div style="font-size:{status_fs:.1f}px;color:{theme["text_muted"]};">{status_text}</div>
     </div>'''
 
-def render_tide_gauge(needle_deg, status_text, next_label, theme, size=132):
+def render_tide_gauge(needle_deg, status_text, next_label, theme, distance_multiplier=1.0, size=132):
     left_nums = [(1, -30), (2, -60), (3, -90), (4, -120), (5, -150)]
     right_nums = [(5, 30), (4, 60), (3, 90), (2, 120), (1, 150)]
+    tick_fs, value_fs, status_fs = 9 * distance_multiplier, 30 * distance_multiplier, 12 * distance_multiplier
     labels_svg = ""
     for num, angle in left_nums + right_nums:
         rad = math.radians(angle)
         lx, ly = 80 + 50 * math.sin(rad), 80 - 50 * math.cos(rad)
-        labels_svg += f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="9" text-anchor="middle" dominant-baseline="middle" fill="{theme["text_secondary"]}">{num}</text>'
+        labels_svg += f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="{tick_fs:.1f}" text-anchor="middle" dominant-baseline="middle" fill="{theme["text_secondary"]}">{num}</text>'
 
     svg = f'''<svg width="{size}" height="{size}" viewBox="0 0 160 160">
       <circle cx="80" cy="80" r="66" fill="none" stroke="{theme["border"]}" stroke-width="1"/>
       <circle cx="80" cy="80" r="58" fill="none" stroke="{theme["border"]}" stroke-width="8"/>
       {labels_svg}
-      <text x="80" y="22" font-size="9" font-weight="700" text-anchor="middle" fill="{theme["body_text"]}">High tide</text>
-      <text x="80" y="140" font-size="9" text-anchor="middle" fill="{theme["text_secondary"]}">Low tide</text>
+      <text x="80" y="22" font-size="{tick_fs:.1f}" font-weight="700" text-anchor="middle" fill="{theme["body_text"]}">High tide</text>
+      <text x="80" y="140" font-size="{tick_fs:.1f}" text-anchor="middle" fill="{theme["text_secondary"]}">Low tide</text>
       <line x1="80" y1="80" x2="80" y2="26" stroke="{theme["body_text"]}" stroke-width="2" transform="rotate({needle_deg:.1f} 80 80)"/>
       <circle cx="80" cy="80" r="4" fill="{theme["body_text"]}"/>
     </svg>'''
 
     return f'''<div style="text-align:center;">{svg}
-      <div style="font-size:15px;font-weight:500;color:{theme["body_text"]};margin-top:2px;">{status_text}</div>
-      <div style="font-size:12px;color:{theme["text_muted"]};">{next_label}</div>
+      <div style="font-size:{value_fs:.1f}px;font-weight:500;color:{theme["body_text"]};margin-top:2px;">{status_text}</div>
+      <div style="font-size:{status_fs:.1f}px;color:{theme["text_muted"]};">{next_label}</div>
     </div>'''
 
-def render_center_hub(temp_f_str, temp_c_str, theme, size=92):
+def render_center_hub(temp_f_str, temp_c_str, theme, distance_multiplier=1.0, size=92):
+    big_fs, small_fs = 40 * distance_multiplier, 11 * distance_multiplier
     return f'''<div style="width:{size}px;height:{size}px;border-radius:50%;border:2px solid {theme["border_strong"]};
       display:flex;flex-direction:column;align-items:center;justify-content:center;background:{theme["bg"]};margin:0 auto;">
       <div style="font-size:14px;">🌡️</div>
-      <div style="font-size:20px;font-weight:700;color:{theme["body_text"]};line-height:1.1;">{temp_f_str}</div>
-      <div style="font-size:11px;color:{theme["text_muted"]};">{temp_c_str}</div>
+      <div style="font-size:{big_fs:.1f}px;font-weight:700;color:{theme["body_text"]};line-height:1.1;">{temp_f_str}</div>
+      <div style="font-size:{small_fs:.1f}px;color:{theme["text_muted"]};">{temp_c_str}</div>
     </div>'''
 
-def render_instrument_panel(env_payload, temp_str, alt_temp_str, now, theme, hub_size=92):
+def render_instrument_panel(env_payload, temp_str, alt_temp_str, now, theme, distance_multiplier=1.0, hub_size=92):
     pressure_val = env_payload.get("pressure", "--")
     pressure_text = f"{pressure_val:.0f} hPa" if isinstance(pressure_val, (int, float)) else "-- hPa"
     trend_text = {"rising": "↑ Rising", "falling": "↓ Falling", "steady": "→ Steady"}.get(env_payload.get("pressure_trend"), "No trend data")
     barometer = render_gauge(950, 1070, pressure_val if isinstance(pressure_val, (int, float)) else 1010,
-                              "BAROMETER", pressure_text, trend_text, theme, lambda v: f"{v:.0f}")
+                              "BAROMETER", pressure_text, trend_text, theme, lambda v: f"{v:.0f}", distance_multiplier)
 
     humidity_val = env_payload.get("humidity", "--")
     humidity_text = f"{humidity_val}%" if isinstance(humidity_val, (int, float)) else "--%"
     hygrometer = render_gauge(0, 100, humidity_val if isinstance(humidity_val, (int, float)) else 50,
-                               "HYGROMETER", humidity_text, "Relative humidity", theme, lambda v: f"{v:.0f}")
+                               "HYGROMETER", humidity_text, "Relative humidity", theme, lambda v: f"{v:.0f}", distance_multiplier)
 
     temp_val = env_payload.get("temperature", "--")
     thermometer = render_gauge(-20, 120, temp_val if isinstance(temp_val, (int, float)) else 70,
-                                "THERMOMETER", temp_str, alt_temp_str, theme, lambda v: f"{v:.0f}")
+                                "THERMOMETER", temp_str, alt_temp_str, theme, lambda v: f"{v:.0f}", distance_multiplier)
 
     tide_clock = render_tide_gauge(env_payload.get("tide_needle_deg", 0), env_payload.get("tide_status", "Unknown"),
-                                    env_payload.get("tide_next_label", ""), theme)
+                                    env_payload.get("tide_next_label", ""), theme, distance_multiplier)
 
-    hub = render_center_hub(temp_str, alt_temp_str, theme, size=hub_size)
+    hub = render_center_hub(temp_str, alt_temp_str, theme, distance_multiplier, size=hub_size)
 
     return f'''<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;white-space:nowrap;gap:8px;">
       <div style="font-size:12px;font-weight:bold;color:{theme["title"]};text-transform:uppercase;letter-spacing:0.5px;">⚓ Station Instrument Panel</div>
@@ -142,8 +160,16 @@ def render_instrument_panel(env_payload, temp_str, alt_temp_str, now, theme, hub
       <div style="grid-column:3;grid-row:3;">{tide_clock}</div>
     </div>'''
 
-# Execute consolidated queries
-scripture_payload = get_clock_display_data(search_24h)
+# Execute consolidated queries. get_clock_display_data has a side effect (it advances
+# the fair-rotation display_count of whatever it picks), so it must only actually run
+# once per real minute change - not on every rerun (tab switches, sidebar clicks, etc.
+# all trigger reruns too). Cache the resolved verse in session_state per time_key so
+# re-running mid-minute doesn't silently re-roll the selection.
+if st.session_state.get("resolved_time_key") != search_24h:
+    st.session_state["resolved_time_key"] = search_24h
+    st.session_state["scripture_payload"] = get_clock_display_data(search_24h)
+scripture_payload = st.session_state["scripture_payload"]
+
 env_payload = fetch_weather_and_tides(LAT, LON)
 
 # Numeric conversions
@@ -166,8 +192,21 @@ with st.sidebar:
         cfg_night_start = st.number_input("Night starts at (hour, 0-23)", min_value=0, max_value=23, value=schedule["night_start"], key="cfg_night_start")
         cfg_sleep_start = st.number_input("Sleep starts at (hour, 0-23)", min_value=0, max_value=23, value=schedule["sleep_start"], key="cfg_sleep_start")
         cfg_sleep_end = st.number_input("Sleep ends at (hour, 0-23)", min_value=0, max_value=23, value=schedule["sleep_end"], key="cfg_sleep_end")
-        if st.button("💾 Save Schedule", use_container_width=True):
-            save_display_settings(cfg_day_start, cfg_night_start, cfg_sleep_start, cfg_sleep_end)
+        st.divider()
+        cfg_clock_format = st.radio(
+            "Clock face format", options=[12, 24],
+            format_func=lambda v: "12-hour (e.g. 08:24)" if v == 12 else "24-hour (e.g. 20:24)",
+            index=0 if schedule["clock_format"] == 12 else 1, key="cfg_clock_format"
+        )
+        st.divider()
+        distance_options = ["Desk", "Counter", "Wall"]
+        cfg_display_distance = st.radio(
+            "Display Distance (scales secondary/detail text)", options=distance_options,
+            index=distance_options.index(schedule["display_distance"]) if schedule["display_distance"] in distance_options else 0,
+            key="cfg_display_distance"
+        )
+        if st.button("💾 Save Display Settings", use_container_width=True):
+            save_display_settings(cfg_day_start, cfg_night_start, cfg_sleep_start, cfg_sleep_end, cfg_clock_format, cfg_display_distance)
             st.rerun()
 
 # --- UI VISUAL STYLING SHEET (day/night/sleep themed) ---
@@ -176,40 +215,61 @@ st.markdown(f"""
     .stApp {{ background-color: {theme['bg']}; }}
     .clock-face {{ font-size: 130px; font-weight: 800; color: {theme['clock']}; font-family: 'Courier New', monospace; text-align: center; margin-top: -15px; }}
     .meta-title {{ font-size: 16px; font-weight: bold; color: {theme['title']}; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }}
-    .meta-body {{ font-size: 15px; font-family: 'Georgia', serif; line-height: 1.5; color: {theme['body_text']}; }}
-    .scripture-hero {{ font-size: 38px; font-family: 'Georgia', serif; line-height: 1.6; color: {theme['hero']}; font-style: italic; }}
-    .citation-banner {{ font-size: 22px; font-weight: bold; color: {theme['citation']}; margin-bottom: 5px; }}
+    .meta-body {{ font-size: {15 * distance_multiplier:.1f}px; font-family: 'Georgia', serif; line-height: 1.5; color: {theme['body_text']}; }}
+    .scripture-hero {{ font-size: 43px; font-family: 'Georgia', serif; line-height: 1.6; color: {theme['hero']}; font-style: italic; }}
+    .citation-banner {{ font-size: {26 * distance_multiplier:.1f}px; font-weight: bold; color: {theme['citation']}; margin-bottom: 5px; }}
 
     [data-testid="stHeader"] {{ background: transparent; }}
     footer {{ visibility: hidden !important; }}
     [data-testid="stAppDeployButton"] {{ display: none !important; }}
+
+    /* Tap-to-detail (BIBLE_CLOCK_READABILITY_SPEC.md) - let scaled content overlay past its own box */
+    [data-testid="stVerticalBlock"], [data-testid="stElementContainer"], [data-testid="stMarkdown"], [data-testid="stMarkdownContainer"] {{
+        overflow: visible !important;
+    }}
+    .tap-zoom-box {{ display: none; }}
+    .tap-zoom-label {{ display: block; cursor: pointer; }}
+    .tap-zoom-box:checked + .tap-zoom-label {{
+        animation: tapZoomPulse 5s ease-in-out forwards;
+        position: relative;
+        z-index: 999;
+    }}
+    @keyframes tapZoomPulse {{
+        0%   {{ transform: scale(1); }}
+        8%   {{ transform: scale(1.7); }}
+        85%  {{ transform: scale(1.7); }}
+        100% {{ transform: scale(1); }}
+    }}
     </style>
 """, unsafe_allow_html=True)
 
 if app_mode == "🕒 Minimalist Wall Clock":
     if display_mode == "sleep":
         # Nothing but a dim clock face - a tablet on a nightstand shouldn't light up the room.
-        st.markdown(f"<div class='clock-face' style='margin-top: 35vh;'>{now.strftime('%I:%M')}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='clock-face' style='margin-top: 35vh;'>{clock_face_str}</div>", unsafe_allow_html=True)
     else:
         col_left_context, col_right_clock_face = st.columns([1, 2])
 
         with col_left_context:
             with st.container(border=True):
-                st.markdown(f"<div class='meta-title'>📖 {scripture_payload['book']}</div>", unsafe_allow_html=True)
-                st.markdown(f"<div class='meta-body'>{scripture_payload['book_desc']}</div>", unsafe_allow_html=True)
+                book_card_html = (f"<div class='meta-title'>📖 {scripture_payload['book']}</div>"
+                                  f"<div class='meta-body'>{scripture_payload['book_desc']}</div>")
+                st.markdown(wrap_tap_zoom("zoom-book-card", book_card_html), unsafe_allow_html=True)
 
             with st.container(border=True):
-                st.markdown(f"<div class='meta-title'>📍 Chapter {scripture_payload['chapter']}</div>", unsafe_allow_html=True)
-                st.markdown(f"<div class='meta-body'>{scripture_payload['chapter_summary']}</div>", unsafe_allow_html=True)
+                chapter_card_html = (f"<div class='meta-title'>📍 Chapter {scripture_payload['chapter']}</div>"
+                                     f"<div class='meta-body'>{scripture_payload['chapter_summary']}</div>")
+                st.markdown(wrap_tap_zoom("zoom-chapter-card", chapter_card_html), unsafe_allow_html=True)
 
             # Station Instrument Panel: four brass-style gauges (Barometer, Hygrometer,
             # Thermometer, Tide Clock) with a center temperature hub - see STATION_INSTRUMENT_PANEL_SPEC.md
             with st.container(border=True):
-                st.markdown(render_instrument_panel(env_payload, temp_str, alt_temp_str, now, theme), unsafe_allow_html=True)
+                panel_html = render_instrument_panel(env_payload, temp_str, alt_temp_str, now, theme, distance_multiplier)
+                st.markdown(wrap_tap_zoom("zoom-instrument-panel", panel_html), unsafe_allow_html=True)
 
         with col_right_clock_face:
             with st.container(border=True):
-                st.markdown(f"<div class='clock-face'>{now.strftime('%I:%M')}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='clock-face'>{clock_face_str}</div>", unsafe_allow_html=True)
 
             with st.container(border=True):
                 st.markdown(f"<div class='citation-banner'>{scripture_payload['icon']} {scripture_payload['book']} {scripture_payload['chapter']}:{scripture_payload['verse']}</div>", unsafe_allow_html=True)

@@ -6,26 +6,30 @@ import requests
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bible_clock.db")
 
 def get_display_settings():
-    """Reads the configurable day/night/sleep schedule hours (0-23) from app_settings."""
+    """Reads the configurable day/night/sleep schedule hours (0-23), clock face format (12/24),
+    and Display Distance (Desk/Counter/Wall) from app_settings."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT setting_key, setting_value FROM app_settings")
-    raw = {k: int(v) for k, v in cursor.fetchall()}
+    raw = dict(cursor.fetchall())
     conn.close()
     return {
-        "day_start": raw.get("day_start_hour", 7),
-        "night_start": raw.get("night_start_hour", 19),
-        "sleep_start": raw.get("sleep_start_hour", 23),
-        "sleep_end": raw.get("sleep_end_hour", 5),
+        "day_start": int(raw.get("day_start_hour", 7)),
+        "night_start": int(raw.get("night_start_hour", 19)),
+        "sleep_start": int(raw.get("sleep_start_hour", 23)),
+        "sleep_end": int(raw.get("sleep_end_hour", 5)),
+        "clock_format": int(raw.get("clock_format_hour", 12)),
+        "display_distance": raw.get("display_distance", "Desk"),
     }
 
-def save_display_settings(day_start: int, night_start: int, sleep_start: int, sleep_end: int):
+def save_display_settings(day_start: int, night_start: int, sleep_start: int, sleep_end: int, clock_format: int, display_distance: str):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.executemany(
         "INSERT OR REPLACE INTO app_settings (setting_key, setting_value) VALUES (?, ?)",
         [("day_start_hour", str(day_start)), ("night_start_hour", str(night_start)),
-         ("sleep_start_hour", str(sleep_start)), ("sleep_end_hour", str(sleep_end))]
+         ("sleep_start_hour", str(sleep_start)), ("sleep_end_hour", str(sleep_end)),
+         ("clock_format_hour", str(clock_format)), ("display_distance", display_distance)]
     )
     conn.commit()
     conn.close()

@@ -175,10 +175,11 @@ def init_database():
         "setting_value TEXT)"
     )
 
-    # Seed schedule defaults (idempotent - won't clobber a user's saved settings)
+    # Seed schedule + display defaults (idempotent - won't clobber a user's saved settings)
     cursor.executemany(
         "INSERT OR IGNORE INTO app_settings (setting_key, setting_value) VALUES (?, ?)",
-        [("day_start_hour", "7"), ("night_start_hour", "19"), ("sleep_start_hour", "23"), ("sleep_end_hour", "5")]
+        [("day_start_hour", "7"), ("night_start_hour", "19"), ("sleep_start_hour", "23"), ("sleep_end_hour", "5"),
+         ("clock_format_hour", "12"), ("display_distance", "Desk")]
     )
 
 
