@@ -144,6 +144,12 @@ The internal storage layer runs completely inside a localized **SQLite** instanc
 
 ---
 
+## 🗺️ Future Enhancements / TODO
+
+- Extend the ⚙️ **Master Curation Matrix** screen to pin a favorite to an arbitrary chosen time slot (like the 📚 Verse Catalog & Search screen already does), instead of only the current literal minute.
+
+---
+
 ## 📝 License
 
 This project is licensed under the MIT License - see the `LICENSE` file for details. All scripture and commentary text pulled via the scraping utilities reside entirely within the Public Domain.
