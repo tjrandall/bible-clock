@@ -1,6 +1,6 @@
-# 🕒 Relational Bible Clock Dashboard
+# 🕒 Bible Clock Dashboard
 
-An interactive, multi-zone digital wall clock and theological study workstation built using **Streamlit** and a local **SQLite** relational database engine. The system transforms time tracking into an immersive contemplative experience by mapping every minute of the day to matching chapter-and-verse boundaries extracted from the historic Douay-Rheims translation via `drbo.org`.
+An interactive, multi-zone digital wall clock and theological study workstation built using **Streamlit** and a local **SQLite** relational database engine. The system transforms a clock into an immersive contemplative experience by mapping every minute of the day to matching chapter-and-verse boundaries extracted from the historic Douay-Rheims translation via `drbo.org`.
 
 ---
 
@@ -33,6 +33,8 @@ The dashboard relies on clean, text-free visual iconography right next to the ac
 * **`✝` (Cross):** Identifies a standard, exact database `Chapter:Verse` structural match for the current minute.
 * **`⭐` (Star):** Appears when the slot is pulling from your customized, hand-pinned favorite rotation pool.
 * **`𓆟` (Jesus Fish / Ichthys):** Indicates that a time slot is running the emergency, beautiful fill-in fallback verse (*Psalms 23:1*) to maintain interface stability.
+
+To ensure a larger variety of quotes, the system will consider chapter:verse selections for both the AM/PM version of time, as well as the 24HR version of time.  For example, it will pull chapter:verse matches for 13:28 and 1:28 PM.
 
 ---
 
@@ -89,7 +91,7 @@ Your local system will immediately spin up the Streamlit server and launch a fre
 
 ## ⚙️ Core System Administration & Management
 
-The clock features two distinct workspace modes separated via smooth top-level navigation tabs:
+The clock features two distinct workspace modes separated via top-level navigation tabs:
 
 ### 🕒 Minimalist Wall Clock (Kiosk Mode)
 
